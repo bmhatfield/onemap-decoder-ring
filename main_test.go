@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"strings"
 	"testing"
 )
@@ -188,6 +189,27 @@ func TestMarshalStableJSONDoesNotEscapeHTML(t *testing.T) {
 	}
 	if !strings.Contains(got, `"<unknown>"`) {
 		t.Fatalf("JSON does not contain readable unknown marker: %s", got)
+	}
+}
+
+func TestLooksLikePayloadAtValidatesReadableMapAndPinCount(t *testing.T) {
+	short := make([]byte, headerBytes)
+	binary.LittleEndian.PutUint32(short[0:], uint32(2))
+	binary.LittleEndian.PutUint32(short[4:], uint32(mapSize))
+	if looksLikePayloadAt(short, 0) {
+		t.Fatal("short header-only payload looked valid")
+	}
+
+	data := make([]byte, headerBytes+packedBytes+4)
+	binary.LittleEndian.PutUint32(data[0:], uint32(2))
+	binary.LittleEndian.PutUint32(data[4:], uint32(mapSize))
+	if !looksLikePayloadAt(data, 0) {
+		t.Fatal("valid zero-pin payload did not look valid")
+	}
+
+	binary.LittleEndian.PutUint32(data[headerBytes+packedBytes:], uint32(1))
+	if looksLikePayloadAt(data, 0) {
+		t.Fatal("payload with unreadable pin count looked valid")
 	}
 }
 

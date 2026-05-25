@@ -21,6 +21,8 @@ const (
 	mapCells    = mapSize * mapSize
 	packedBytes = mapCells / 8
 	headerBytes = 8
+	minPinBytes = 19
+	maxVersion  = 2
 )
 
 var abbrToName = map[string]string{
@@ -195,7 +197,8 @@ type DecodedFile struct {
 	UnexploredCount       int          `json:"unexplored_count"`
 	ExploredPercent       float64      `json:"explored_percent"`
 	PinCount              int32        `json:"pin_count"`
-	Pins                  any          `json:"pins"`
+	PinsOmitted           bool         `json:"pins_omitted,omitempty"`
+	Pins                  []Pin        `json:"pins,omitempty"`
 	BytesConsumed         int          `json:"bytes_consumed"`
 	TrailingBytes         int          `json:"trailing_bytes"`
 	PinSummary            []PinSummary `json:"pin_summary,omitempty"`
@@ -212,13 +215,38 @@ func findHeader(data []byte) (int, error) {
 		searchLimit = 2_000_000
 	}
 	for off := 0; off <= searchLimit; off++ {
-		version := int32(binary.LittleEndian.Uint32(data[off:]))
-		size := int32(binary.LittleEndian.Uint32(data[off+4:]))
-		if (version == 1 || version == 2) && size == mapSize {
+		if looksLikePayloadAt(data, off) {
 			return off, nil
 		}
 	}
-	return 0, errors.New("could not find plausible header: int32 version {1,2}, int32 size 2048")
+	return 0, errors.New("could not find plausible header: int32 version {1,2}, int32 size 2048, readable map and pin count")
+}
+
+func looksLikePayloadAt(data []byte, off int) bool {
+	if off+headerBytes > len(data) {
+		return false
+	}
+	version := int32(binary.LittleEndian.Uint32(data[off:]))
+	size := int32(binary.LittleEndian.Uint32(data[off+4:]))
+	if version < 1 || version > maxVersion || size != mapSize {
+		return false
+	}
+
+	mapBytes := mapCells
+	if version >= 2 {
+		mapBytes = packedBytes
+	}
+
+	pinCountOffset := off + headerBytes + mapBytes
+	if pinCountOffset+4 > len(data) {
+		return false
+	}
+	pinCount := int32(binary.LittleEndian.Uint32(data[pinCountOffset:]))
+	if pinCount < 0 {
+		return false
+	}
+	remaining := len(data) - pinCountOffset - 4
+	return int(pinCount) <= remaining/minPinBytes
 }
 
 func unpackV2Bits(blob []byte) ([]bool, int, error) {
@@ -284,8 +312,8 @@ func readExploredFile(path string) (*DecodedFile, error) {
 	var exploredCount int
 	fixedMapBytes := mapCells
 	var packed *int
-	switch {
-	case version >= 2:
+	switch version {
+	case 2:
 		packedStart := r.pos
 		p := packedBytes
 		packed = &p
@@ -295,7 +323,7 @@ func readExploredFile(path string) (*DecodedFile, error) {
 			return nil, err
 		}
 		r.pos += packedBytes
-	case version == 1:
+	case 1:
 		explored = make([]bool, mapCells)
 		for i := range explored {
 			v, err := r.readBool()
@@ -317,6 +345,9 @@ func readExploredFile(path string) (*DecodedFile, error) {
 	}
 	if pinCount < 0 {
 		return nil, fmt.Errorf("invalid negative pin count %d", pinCount)
+	}
+	if int(pinCount) > r.remaining()/minPinBytes {
+		return nil, fmt.Errorf("invalid pin count %d at offset %d; only %d bytes remain", pinCount, r.pos-4, r.remaining())
 	}
 	pins := make([]Pin, 0, pinCount)
 	for i := int32(0); i < pinCount; i++ {
@@ -428,7 +459,7 @@ func main() {
 	flag.StringVar(&jsonPath, "json", "", "write decoded metadata/pins JSON")
 	flag.StringVar(&pgmPath, "pgm", "", "write explored map as grayscale PGM image")
 	flag.BoolVar(&showPins, "pins", false, "print full pin list to stdout")
-	flag.BoolVar(&showSummary, "summary", false, "include pin summary by decoded name")
+	flag.BoolVar(&showSummary, "summary", false, "include pin summary grouped by source and display name")
 	flag.Parse()
 	if flag.NArg() != 1 {
 		fmt.Fprintf(os.Stderr, "usage: %s [--json path] [--pgm path] [--pins] [--summary] file\n", os.Args[0])
@@ -450,11 +481,13 @@ func main() {
 		decoded.PinSummary = summarizePins(decoded.fullPins)
 	}
 	if !showPins {
-		decoded.Pins = fmt.Sprintf("%d pins hidden; pass --pins to print them", decoded.PinCount)
+		decoded.Pins = nil
+		decoded.PinsOmitted = true
 	}
 
 	if jsonPath != "" {
 		clone := *decoded
+		clone.PinsOmitted = false
 		clone.Pins = decoded.fullPins
 		data, err := marshalStableJSON(&clone)
 		if err != nil {
