@@ -1,15 +1,25 @@
-# OneMap Explored Decoder
+# Valheim Explored Decoder
 
-Go decoder for `One Map To Rule Them All` `.explored` files.
+Go decoder for Valheim `.explored` files written by `One Map To Rule Them All`
+and `ServerSideMap`.
 
 ## Run
 
 ```sh
 go run . fixtures/Dedicated.one_map_to_rule_them_all.explored
+go run . fixtures/Dedicated.mod.serversidemap.explored
 go run . --summary fixtures/Dedicated.one_map_to_rule_them_all.explored
 go run . --pins fixtures/Dedicated.one_map_to_rule_them_all.explored
 go run . --json decoded.json fixtures/Dedicated.one_map_to_rule_them_all.explored
 ```
+
+## Supported Formats
+
+| Format | Version | Map encoding | Pin owner field |
+| --- | ---: | --- | --- |
+| `one_map_to_rule_them_all` | 1 | bool bytes | yes |
+| `one_map_to_rule_them_all` | 2 | packed bits | yes |
+| `serversidemap` | 3 | bool bytes | no |
 
 ## Test
 

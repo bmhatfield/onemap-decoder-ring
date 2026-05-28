@@ -17,12 +17,13 @@ import (
 )
 
 const (
-	mapSize     = 2048
-	mapCells    = mapSize * mapSize
-	packedBytes = mapCells / 8
-	headerBytes = 8
-	minPinBytes = 19
-	maxVersion  = 2
+	mapSize              = 2048
+	mapCells             = mapSize * mapSize
+	packedBytes          = mapCells / 8
+	headerBytes          = 8
+	minPinBytesNoOwner   = 18
+	minPinBytesWithOwner = 19
+	maxVersion           = 3
 )
 
 var abbrToName = map[string]string{
@@ -187,6 +188,8 @@ type DecodedFile struct {
 	FileSize              int          `json:"file_size"`
 	HeaderOffset          int          `json:"header_offset"`
 	LeadingPaddingBytes   int          `json:"leading_padding_bytes"`
+	Format                string       `json:"format"`
+	MapEncoding           string       `json:"map_encoding"`
 	Version               int32        `json:"version"`
 	MapSize               int32        `json:"map_size"`
 	Cells                 int          `json:"cells"`
@@ -231,9 +234,9 @@ func looksLikePayloadAt(data []byte, off int) bool {
 		return false
 	}
 
-	mapBytes := mapCells
-	if version >= 2 {
-		mapBytes = packedBytes
+	mapBytes, ok := mapBytesForVersion(version)
+	if !ok {
+		return false
 	}
 
 	pinCountOffset := off + headerBytes + mapBytes
@@ -245,7 +248,51 @@ func looksLikePayloadAt(data []byte, off int) bool {
 		return false
 	}
 	remaining := len(data) - pinCountOffset - 4
-	return int(pinCount) <= remaining/minPinBytes
+	return int(pinCount) <= remaining/minPinBytesForVersion(version)
+}
+
+func mapBytesForVersion(version int32) (int, bool) {
+	switch version {
+	case 1, 3:
+		return mapCells, true
+	case 2:
+		return packedBytes, true
+	default:
+		return 0, false
+	}
+}
+
+func minPinBytesForVersion(version int32) int {
+	if pinHasOwner(version) {
+		return minPinBytesWithOwner
+	}
+	return minPinBytesNoOwner
+}
+
+func pinHasOwner(version int32) bool {
+	return version == 1 || version == 2
+}
+
+func formatForVersion(version int32) string {
+	switch version {
+	case 1, 2:
+		return "one_map_to_rule_them_all"
+	case 3:
+		return "serversidemap"
+	default:
+		return "unknown"
+	}
+}
+
+func mapEncodingForVersion(version int32) string {
+	switch version {
+	case 2:
+		return "packed_bits"
+	case 1, 3:
+		return "bool_bytes"
+	default:
+		return "unknown"
+	}
 }
 
 func countV2Bits(blob []byte) (int, error) {
@@ -316,7 +363,7 @@ func readExploredFile(path string) (*DecodedFile, error) {
 			return nil, err
 		}
 		r.pos += packedBytes
-	case 1:
+	case 1, 3:
 		for i := 0; i < mapCells; i++ {
 			v, err := r.readBool()
 			if err != nil {
@@ -337,7 +384,7 @@ func readExploredFile(path string) (*DecodedFile, error) {
 	if pinCount < 0 {
 		return nil, fmt.Errorf("invalid negative pin count %d", pinCount)
 	}
-	if int(pinCount) > r.remaining()/minPinBytes {
+	if int(pinCount) > r.remaining()/minPinBytesForVersion(version) {
 		return nil, fmt.Errorf("invalid pin count %d at offset %d; only %d bytes remain", pinCount, r.pos-4, r.remaining())
 	}
 	pins := make([]Pin, 0, pinCount)
@@ -359,9 +406,12 @@ func readExploredFile(path string) (*DecodedFile, error) {
 		if err != nil {
 			return nil, err
 		}
-		owner, err := r.readString()
-		if err != nil {
-			return nil, err
+		var owner string
+		if pinHasOwner(version) {
+			owner, err = r.readString()
+			if err != nil {
+				return nil, err
+			}
 		}
 		pins = append(pins, Pin{
 			Name: name, DecodedName: decoded.Decoded, DecodedAbbr: decoded.Abbr,
@@ -375,6 +425,7 @@ func readExploredFile(path string) (*DecodedFile, error) {
 	}
 	return &DecodedFile{
 		File: filepath.Clean(path), FileSize: len(data), HeaderOffset: start, LeadingPaddingBytes: start,
+		Format: formatForVersion(version), MapEncoding: mapEncodingForVersion(version),
 		Version: version, MapSize: size, Cells: mapCells, PackedMapBytes: packed,
 		FixedMapBytes: fixedMapBytes, EstimatedPayloadBytes: estimatedPayloadBytes,
 		ExploredCount: exploredCount, UnexploredCount: mapCells - exploredCount,

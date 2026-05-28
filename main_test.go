@@ -9,6 +9,7 @@ import (
 const (
 	currentFixture = "fixtures/Dedicated.one_map_to_rule_them_all.explored"
 	oldFixture     = "fixtures/Dedicated.one_map_to_rule_them_all.explored.old"
+	serverFixture  = "fixtures/Dedicated.mod.serversidemap.explored"
 )
 
 func TestDedicatedExploredFixture(t *testing.T) {
@@ -16,7 +17,7 @@ func TestDedicatedExploredFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertFixture(t, decoded, 533596, 120379, 325, 9300)
+	assertFixture(t, decoded, "one_map_to_rule_them_all", "packed_bits", 2, 533596, 120379, 325, 9300)
 }
 
 func TestDedicatedOldExploredFixture(t *testing.T) {
@@ -24,7 +25,20 @@ func TestDedicatedOldExploredFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertFixture(t, decoded, 1645822, 119706, 39255, 1121526)
+	assertFixture(t, decoded, "one_map_to_rule_them_all", "packed_bits", 2, 1645822, 119706, 39255, 1121526)
+}
+
+func TestDedicatedServerSideMapExploredFixture(t *testing.T) {
+	decoded, err := readExploredFile(serverFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFixture(t, decoded, "serversidemap", "bool_bytes", 3, 4194613, 145930, 11, 301)
+	for _, pin := range decoded.fullPins {
+		if pin.OwnerID != "" {
+			t.Fatalf("ServerSideMap pin owner = %q, want empty", pin.OwnerID)
+		}
+	}
 }
 
 func TestSummarizeByDecodedName(t *testing.T) {
@@ -211,15 +225,28 @@ func TestLooksLikePayloadAtValidatesReadableMapAndPinCount(t *testing.T) {
 	if looksLikePayloadAt(data, 0) {
 		t.Fatal("payload with unreadable pin count looked valid")
 	}
+
+	serverData := make([]byte, headerBytes+mapCells+4)
+	binary.LittleEndian.PutUint32(serverData[0:], uint32(3))
+	binary.LittleEndian.PutUint32(serverData[4:], uint32(mapSize))
+	if !looksLikePayloadAt(serverData, 0) {
+		t.Fatal("valid zero-pin ServerSideMap payload did not look valid")
+	}
 }
 
-func assertFixture(t *testing.T, decoded *DecodedFile, fileSize, exploredCount int, pinCount int32, estimatedPayloadBytes int) {
+func assertFixture(t *testing.T, decoded *DecodedFile, format, mapEncoding string, version int32, fileSize, exploredCount int, pinCount int32, estimatedPayloadBytes int) {
 	t.Helper()
 	if decoded.HeaderOffset != 0 {
 		t.Fatalf("header offset = %d, want 0", decoded.HeaderOffset)
 	}
-	if decoded.Version != 2 {
-		t.Fatalf("version = %d, want 2", decoded.Version)
+	if decoded.Format != format {
+		t.Fatalf("format = %q, want %q", decoded.Format, format)
+	}
+	if decoded.MapEncoding != mapEncoding {
+		t.Fatalf("map encoding = %q, want %q", decoded.MapEncoding, mapEncoding)
+	}
+	if decoded.Version != version {
+		t.Fatalf("version = %d, want %d", decoded.Version, version)
 	}
 	if decoded.MapSize != mapSize {
 		t.Fatalf("map size = %d, want %d", decoded.MapSize, mapSize)
@@ -227,11 +254,19 @@ func assertFixture(t *testing.T, decoded *DecodedFile, fileSize, exploredCount i
 	if decoded.FileSize != fileSize {
 		t.Fatalf("file size = %d, want %d", decoded.FileSize, fileSize)
 	}
-	if decoded.PackedMapBytes == nil || *decoded.PackedMapBytes != packedBytes {
-		t.Fatalf("packed map bytes = %v, want %d", decoded.PackedMapBytes, packedBytes)
+	if mapEncoding == "packed_bits" {
+		if decoded.PackedMapBytes == nil || *decoded.PackedMapBytes != packedBytes {
+			t.Fatalf("packed map bytes = %v, want %d", decoded.PackedMapBytes, packedBytes)
+		}
+	} else if decoded.PackedMapBytes != nil {
+		t.Fatalf("packed map bytes = %v, want nil", *decoded.PackedMapBytes)
 	}
-	if decoded.FixedMapBytes != packedBytes {
-		t.Fatalf("fixed map bytes = %d, want %d", decoded.FixedMapBytes, packedBytes)
+	wantFixedMapBytes := packedBytes
+	if mapEncoding == "bool_bytes" {
+		wantFixedMapBytes = mapCells
+	}
+	if decoded.FixedMapBytes != wantFixedMapBytes {
+		t.Fatalf("fixed map bytes = %d, want %d", decoded.FixedMapBytes, wantFixedMapBytes)
 	}
 	if decoded.EstimatedPayloadBytes != estimatedPayloadBytes {
 		t.Fatalf("estimated payload bytes = %d, want %d", decoded.EstimatedPayloadBytes, estimatedPayloadBytes)
