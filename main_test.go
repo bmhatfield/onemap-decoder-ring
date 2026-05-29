@@ -104,27 +104,27 @@ func TestServerSideMapPinsOutputIncludesRepresentativePins(t *testing.T) {
 	anything := findJSONObject(t, pins, "name", "ANYTHING")
 	assertJSONMissing(t, anything, "decoded_name")
 	assertJSONMissing(t, anything, "decoded_abbr")
-	assertJSONNull(t, anything, "decoded_count")
+	assertJSONMissing(t, anything, "decoded_count")
 	assertJSONNumber(t, anything, "type", 0)
 	assertJSONBool(t, anything, "checked", false)
-	assertJSONString(t, anything, "owner_id", "")
+	assertJSONMissing(t, anything, "owner_id")
 	assertJSONVector(t, anything, "pos", 801.8745, 0, -784.032)
 
 	mapDay := findJSONObject(t, pins, "name", "$hud_mapday 496")
 	assertJSONMissing(t, mapDay, "decoded_name")
 	assertJSONMissing(t, mapDay, "decoded_abbr")
-	assertJSONNull(t, mapDay, "decoded_count")
+	assertJSONMissing(t, mapDay, "decoded_count")
 	assertJSONNumber(t, mapDay, "type", 4)
 	assertJSONBool(t, mapDay, "checked", false)
-	assertJSONString(t, mapDay, "owner_id", "")
+	assertJSONMissing(t, mapDay, "owner_id")
 	assertJSONVector(t, mapDay, "pos", 1268.3069, 39.010666, 4389.2583)
 
 	village := findJSONObject(t, pins, "name", "fuling village")
 	assertJSONMissing(t, village, "decoded_name")
 	assertJSONMissing(t, village, "decoded_abbr")
-	assertJSONNull(t, village, "decoded_count")
+	assertJSONMissing(t, village, "decoded_count")
 	assertJSONNumber(t, village, "type", 0)
-	assertJSONString(t, village, "owner_id", "")
+	assertJSONMissing(t, village, "owner_id")
 }
 
 func TestServerSideMapSummaryOutputIncludesRawGroups(t *testing.T) {
@@ -376,9 +376,6 @@ func TestLooksLikePayloadAtValidatesReadableMapAndPinCount(t *testing.T) {
 
 func assertFixture(t *testing.T, decoded *DecodedFile, format, mapEncoding string, version int32, fileSize, exploredCount int, pinCount int32, estimatedPayloadBytes int) {
 	t.Helper()
-	if decoded.HeaderOffset != 0 {
-		t.Fatalf("header offset = %d, want 0", decoded.HeaderOffset)
-	}
 	if decoded.Format != format {
 		t.Fatalf("format = %q, want %q", decoded.Format, format)
 	}
@@ -419,12 +416,6 @@ func assertFixture(t *testing.T, decoded *DecodedFile, format, mapEncoding strin
 	}
 	if decoded.PinCount != pinCount {
 		t.Fatalf("pin count = %d, want %d", decoded.PinCount, pinCount)
-	}
-	if decoded.BytesConsumed != decoded.FileSize {
-		t.Fatalf("bytes consumed = %d, want %d", decoded.BytesConsumed, decoded.FileSize)
-	}
-	if decoded.TrailingBytes != 0 {
-		t.Fatalf("trailing bytes = %d, want 0", decoded.TrailingBytes)
 	}
 }
 
@@ -481,8 +472,6 @@ func assertEmptyFixtureMetadata(t *testing.T, out map[string]any) {
 	t.Helper()
 	assertJSONString(t, out, "file", emptyFixture)
 	assertJSONNumber(t, out, "file_size", 4194316)
-	assertJSONNumber(t, out, "header_offset", 0)
-	assertJSONNumber(t, out, "leading_padding_bytes", 0)
 	assertJSONString(t, out, "format", "serversidemap")
 	assertJSONString(t, out, "map_encoding", "bool_bytes")
 	assertJSONNumber(t, out, "version", 3)
@@ -495,16 +484,12 @@ func assertEmptyFixtureMetadata(t *testing.T, out map[string]any) {
 	assertJSONNumber(t, out, "unexplored_count", mapCells-162)
 	assertJSONFloat(t, out, "explored_percent", float64(162)*100/mapCells)
 	assertJSONNumber(t, out, "pin_count", 0)
-	assertJSONNumber(t, out, "bytes_consumed", 4194316)
-	assertJSONNumber(t, out, "trailing_bytes", 0)
 }
 
 func assertServerFixtureMetadata(t *testing.T, out map[string]any) {
 	t.Helper()
 	assertJSONString(t, out, "file", serverFixture)
 	assertJSONNumber(t, out, "file_size", 4194613)
-	assertJSONNumber(t, out, "header_offset", 0)
-	assertJSONNumber(t, out, "leading_padding_bytes", 0)
 	assertJSONString(t, out, "format", "serversidemap")
 	assertJSONString(t, out, "map_encoding", "bool_bytes")
 	assertJSONNumber(t, out, "version", 3)
@@ -517,8 +502,6 @@ func assertServerFixtureMetadata(t *testing.T, out map[string]any) {
 	assertJSONNumber(t, out, "unexplored_count", mapCells-145930)
 	assertJSONFloat(t, out, "explored_percent", float64(145930)*100/mapCells)
 	assertJSONNumber(t, out, "pin_count", 11)
-	assertJSONNumber(t, out, "bytes_consumed", 4194613)
-	assertJSONNumber(t, out, "trailing_bytes", 0)
 }
 
 func assertJSONArray(t *testing.T, out map[string]any, key string, wantLen int) []any {

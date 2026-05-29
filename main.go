@@ -165,11 +165,11 @@ type Pin struct {
 	Name        string  `json:"name"`
 	DecodedName string  `json:"decoded_name,omitempty"`
 	DecodedAbbr string  `json:"decoded_abbr,omitempty"`
-	DecodedCnt  *int    `json:"decoded_count"`
+	DecodedCnt  *int    `json:"decoded_count,omitempty"`
 	Pos         Vector3 `json:"pos"`
 	Type        int32   `json:"type"`
 	Checked     bool    `json:"checked"`
-	OwnerID     string  `json:"owner_id"`
+	OwnerID     string  `json:"owner_id,omitempty"`
 }
 
 type PinSummary struct {
@@ -186,8 +186,6 @@ type PinSummary struct {
 type DecodedFile struct {
 	File                  string       `json:"file"`
 	FileSize              int          `json:"file_size"`
-	HeaderOffset          int          `json:"header_offset"`
-	LeadingPaddingBytes   int          `json:"leading_padding_bytes"`
 	Format                string       `json:"format"`
 	MapEncoding           string       `json:"map_encoding"`
 	Version               int32        `json:"version"`
@@ -202,8 +200,6 @@ type DecodedFile struct {
 	PinCount              int32        `json:"pin_count"`
 	PinsOmitted           bool         `json:"pins_omitted,omitempty"`
 	Pins                  []Pin        `json:"pins,omitempty"`
-	BytesConsumed         int          `json:"bytes_consumed"`
-	TrailingBytes         int          `json:"trailing_bytes"`
 	PinSummary            []PinSummary `json:"pin_summary,omitempty"`
 	fullPins              []Pin
 }
@@ -427,14 +423,13 @@ func readExploredFile(path string) (*DecodedFile, error) {
 		estimatedPayloadBytes = 0
 	}
 	return &DecodedFile{
-		File: filepath.Clean(path), FileSize: len(data), HeaderOffset: start, LeadingPaddingBytes: start,
+		File: filepath.Clean(path), FileSize: len(data),
 		Format: formatForVersion(version), MapEncoding: mapEncodingForVersion(version),
 		Version: version, MapSize: size, Cells: mapCells, PackedMapBytes: packed,
 		FixedMapBytes: fixedMapBytes, EstimatedPayloadBytes: estimatedPayloadBytes,
 		ExploredCount: exploredCount, UnexploredCount: mapCells - exploredCount,
 		ExploredPercent: float64(exploredCount) * 100 / mapCells,
-		PinCount:        pinCount, Pins: pins, BytesConsumed: r.pos, TrailingBytes: len(data) - r.pos,
-		fullPins: pins,
+		PinCount:        pinCount, Pins: pins, fullPins: pins,
 	}, nil
 }
 
